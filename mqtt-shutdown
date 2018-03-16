@@ -1,0 +1,87 @@
+#!/usr/bin/python3
+
+# MQTT SETTINGS
+server = "mrmeeseeks"
+port = 1883
+topic = "tkkrlab/powermanagement"
+
+#------------------------------------------------
+
+import sys, os
+import json
+from subprocess import call
+
+try:
+  import paho.mqtt.client as paho
+except:
+  print("The Paho MQTT module for Python has not been installed.")
+  print("Please install the Paho MQTT module by running the following command: ")
+  print("'yaourt -Syyu python-paho-mqtt'")
+  sys.exit(1)
+
+print("Shutdown MQTT daemon")
+print("Renze Nicolai 2017")
+print("")
+
+#-------------------------------------------------
+
+def get_hostname():
+  hostname = 'unknown'
+  try:
+    with open('/etc/hostname', 'r') as hnf:
+      hostname = hnf.read().replace('\n','')
+  except:
+    print('[HOSTNAME] Exception while discovering hostname!')
+  print('[HOSTNAME] Hostname set to '+hostname)
+  return hostname
+
+def on_connect(mosq, userdata, flags, rc):
+  global topic
+  if (rc==0):
+    print("[MQTT] Connected to MQTT server")
+    print("[DEBUG] Subscribing to topic "+topic+"/#")
+    mosq.subscribe(topic+"/#", 0)
+  else:
+    print("[MQTT] Error: on_connect returned rc="+str(rc))
+    sys.exit(1)
+
+def on_message(mosq, obj, msg):
+  global topic
+  global myhostname
+  if (msg.topic.startswith(topic)): #This is a message intended for powermanagement
+    hostname = msg.topic.replace(topic+"/", "")
+    if(int(msg.payload)==0):
+      print("[SHUTDOWN] requested for '"+hostname+"'")
+      if (myhostname==hostname):
+        print("[SHUTDOWN] Shutdown command received. Shutting down.")
+        #call(['sudo', 'dbus-send', '--system', '--print-reply', '--dest=org.freedesktop.login1', '/org/freedesktop/login1', '"org.freedesktop.login1.Manager.PowerOff"', 'boolean:true'])
+        os.system('sudo dbus-send --system --print-reply --dest=org.freedesktop.login1 /org/freedesktop/login1 "org.freedesktop.login1.Manager.PowerOff" boolean:true')
+      else:
+        print("Not for me... ("+hostname+")")
+  else:
+    print("[MQTT] Received message on unknown topic")
+    print("       Topic: "+msg.topic)
+    print("       Qos: "+str(msg.qos))
+    print("       Payload: "+str(msg.payload)) 
+
+def on_subscribe(mosq, obj, mid, granted_qos):
+    print("[MQTT] Subscribed.")
+
+def on_log(mosq, obj, level, string):
+    print("[MQTT] "+string)
+
+def main():
+  global server
+  global port
+  global myhostname
+  mqttc = paho.Client()
+  mqttc.on_message = on_message
+  mqttc.on_connect = on_connect
+  mqttc.on_subscribe = on_subscribe
+  print("[DEBUG] Connecting to MQTT server ("+server+":"+str(port)+")...")
+  mqttc.connect(server, port, 60)
+  myhostname = get_hostname()
+  mqttc.loop_forever()
+
+if __name__ == "__main__":
+  main()
